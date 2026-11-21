@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SpectrumX — Software-Based Spectrum Analyzer</title>
+<style>
+:root{--bg:#12161c;--p:#1a1f27;--p2:#20262f;--b:#2c333d;--t:#d7dee6;--m:#8b96a3;--a:#33c9a7;--a2:#4da3ff;--w:#ffb454;--d:#ff5d5d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:12px 'Segoe UI',Inter,sans-serif;color-scheme:dark}
+header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 12px}
+h1{margin:0;font-size:20px;color:var(--a)}.mu{color:var(--m);font-size:11px}
+h3{margin:0 0 6px;font-size:12px;color:var(--a2)}
+section{background:var(--p);border:1px solid var(--b);border-radius:6px;padding:8px 10px;margin-bottom:8px}
+button,input,select{background:var(--p2);color:var(--t);border:1px solid var(--b);border-radius:4px;padding:4px 8px;font:inherit}
+button{cursor:pointer;padding:6px 12px}button:hover{border-color:var(--a2);color:var(--a2)}button:disabled{opacity:.4;cursor:default}
+.go{background:var(--a);color:#06110d;font-weight:700}.pa{background:var(--w);color:#221400;font-weight:700}.st{background:var(--d);color:#200606;font-weight:700}
+.tab{border-radius:6px 6px 0 0;color:var(--m)}.tab.on{color:var(--a);background:var(--p);font-weight:600}
+nav{padding:0 12px}.page{display:none;padding:8px 12px}.page.on{display:block}
+.app{display:grid;grid-template-columns:370px minmax(0,1fr) 400px;gap:8px}
+@media(max-width:1250px){.app{grid-template-columns:1fr}}
+label{display:flex;justify-content:space-between;align-items:center;gap:6px;margin:3px 0}
+label input[type=number],label select{width:130px}
+canvas{width:100%;display:block;border-radius:4px}
+table{width:100%;border-collapse:collapse}th{color:var(--a2);background:var(--p2);text-align:left}
+th,td{border:1px solid var(--b);padding:3px 5px}td button{padding:2px 6px;margin-right:2px}
+.v{color:var(--a);font-weight:600}.bar{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;align-items:center}
+.sp{flex:1}.note{color:var(--m);font-style:italic}dialog{background:var(--p);color:var(--t);border:1px solid var(--b);border-radius:8px}
+pre{white-space:pre-wrap;max-height:60vh;overflow:auto}
+</style></head><body>
+<header><div><h1>SpectrumX</h1><div class="mu">Software-Based Spectrum Analyzer · v1.0.0 · 100% Software — No SDR Hardware Required</div></div>
+<div><label style="display:inline-flex">Scenario:&nbsp;<select id="scn" style="width:auto"></select></label> <button id="bScn">Load Scenario</button></div></header>
+<nav><button class="tab on" data-t="0">Live Analyzer</button><button class="tab" data-t="1">History</button><button class="tab" data-t="2">Tools &amp; Demonstrations</button></nav>
+
+<div class="page on" id="p0"><div class="app">
+<div>
+ <section><h3>Signal Generator — Multiple Signals</h3><table id="sigs"></table><div class="bar" style="padding:6px 0 0"><button id="bAdd">+ Add Signal</button><button id="bRnd">🎲 Randomize All</button></div></section>
+ <section><h3>Noise / Interference</h3>
+  <label>Gaussian noise<input type="checkbox" id="nEn" checked></label><label>SNR (dB)<input type="number" id="snr" value="20"></label>
+  <label>Narrowband interference<input type="checkbox" id="nbEn"></label><label>Frequency (Hz)<input type="number" id="nbF" value="300000"></label><label>Amplitude<input type="number" id="nbA" value="0.3" step="0.1"></label>
+  <label>Impulse noise<input type="checkbox" id="imEn"></label><label>Probability<input type="number" id="imP" value="0.001" step="0.001"></label><label>Amplitude<input type="number" id="imA" value="5"></label></section>
+ <section><h3>Sampling / FFT / Window</h3>
+  <label>Sampling freq (Hz)<input type="number" id="fs" value="2000000" min="1000"></label>
+  <label>FFT size<select id="fft"><option>1024<option>2048<option selected>4096<option>8192</select></label>
+  <label>Window<select id="win"><option>Rectangular<option selected>Hann<option>Hamming<option>Blackman</select></label>
+  <label>Spectrum mode<select id="mode"><option>Magnitude Spectrum<option selected>Power Spectrum<option>PSD</select></label>
+  <label>Time window (fraction)<input type="number" id="tw" value="1" min="0.01" max="1" step="0.05"></label></section>
+ <section><h3>Detection</h3>
+  <label>Threshold offset (dB)<input type="number" id="thr" value="10"></label><label>Min prominence (dB)<input type="number" id="prom" value="8"></label>
+  <label>Grouping bandwidth (Hz)<input type="number" id="gap" value="30000"></label>
+  <label>Bandwidth method<select id="bwm"><option value="3db">-3 dB<option value="threshold">Noise threshold</select></label></section>
+ <section><h3>Virtual RF Mapping (Simulated — No Hardware)</h3>
+  <label>Center freq (Hz)<input type="number" id="cf" value="100000000"></label><label>Span (Hz)<input type="number" id="span" value="2000000"></label>
+  <div class="note">Simulated signals only. No real RF energy is received.</div></section>
+</div>
+<div>
+ <section><h3>Frequency Spectrum <span class="note">(wheel = zoom, drag = pan, double-click = reset)</span></h3><canvas id="cSpec" style="height:300px"></canvas></section>
+ <section><h3>Waterfall / Spectrogram</h3><canvas id="cWf" style="height:200px"></canvas></section>
+ <section><h3>Time Domain</h3><canvas id="cTime" style="height:170px"></canvas></section>
+</div>
+<div>
+ <section><h3>Live Analysis Dashboard</h3><table id="dash"></table></section>
+ <section><h3>Detected Signals</h3><div style="overflow:auto"><table id="det"></table></div><div class="note" style="margin-top:6px">Rule-based classifier on real spectral/time-domain features.</div></section>
+</div></div></div>
+
+<div class="page" id="p1"><section><div class="bar" style="padding:0 0 6px"><input id="hq" placeholder="Search by classification, signal type, or notes…" style="flex:1"><button id="hS">Search</button><button id="hC">Clear</button></div><div style="overflow:auto"><table id="hist"></table></div><div class="note">Stored in this browser (localStorage). Reload restores a past configuration into the analyzer.</div></section></div>
+
+<div class="page" id="p2"><div class="app" style="grid-template-columns:repeat(auto-fit,minmax(380px,1fr))">
+ <section><h3>Aliasing Demonstration</h3><label>Signal frequency (Hz)<input type="number" id="aF" value="1500000"></label><label>Sampling frequency (Hz)<input type="number" id="aS" value="2000000"></label>
+  <button id="aGo">Run Aliasing Demonstration</button><p id="aOut" style="font-weight:600">Configure frequencies and click Run.</p><canvas id="cAl" style="height:280px"></canvas></section>
+ <section><h3>Spectral Leakage — Window Comparison</h3><label>Signal frequency (Hz)<input type="number" id="lF" value="103750"></label>
+  <button id="lGo">Compare Windows</button><div style="height:12px"></div><canvas id="cLk" style="height:300px"></canvas></section></div></div>
+
+<div class="bar"><button class="go" id="bGo">▶ START</button><button class="pa" id="bPa" disabled>⏸ PAUSE</button><button class="st" id="bSt" disabled>■ STOP</button><button id="bRe">⟲ RESET</button><span class="sp"></span>
+<button id="bSave">💾 Save to History</button><button id="bCsv">Export CSV</button><button id="bJson">Export JSON</button><button id="bPng">Export PNG</button></div>
+<div class="bar mu" id="status">Ready.</div>
+
+<dialog id="dlg"><form method="dialog" id="ef"><h3 id="eH">Configure Signal</h3>
+<label>Type<select id="eT"></select></label><label>Frequency (Hz)<input type="number" id="eF" min="0" step="any" required></label>
+<label>Amplitude<input type="number" id="eA" min="0" step="any" required></label><label>Phase (°)<input type="number" id="eP" step="any" required></label>
+<label>Modulation index<input type="number" id="eM" min="0" step="any"></label><label>Message freq (Hz)<input type="number" id="eMf" min="1" step="any"></label>
+<label>Symbol rate (Hz)<input type="number" id="eS" min="1" step="any"></label><label>Chirp end freq (Hz)<input type="number" id="eC" min="0" step="any"></label>
+<label>Enabled<input type="checkbox" id="eE"></label><div class="bar"><button value="ok">OK</button><button value="no" formnovalidate>Cancel</button></div></form></dialog>
+<dialog id="vd"><pre id="vp"></pre><button onclick="$('#vd').close()">Close</button></dialog>
+
+<script>
+const $=s=>document.querySelector(s),v=id=>+$('#'+id).value,ck=id=>$('#'+id).checked,PI2=2*Math.PI;
+const TYPES=['Sine','Cosine','Square','Triangle','Chirp','AM','FM','PM','BPSK','QPSK'],WINS=['Rectangular','Hann','Hamming','Blackman'];
+const MHz=x=>(x/1e6).toFixed(4)+' MHz',status=m=>$('#status').textContent=m;
+/* ---------- DSP ---------- */
+const rng=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const gauss=r=>Math.sqrt(-2*Math.log(r()||1e-12))*Math.cos(PI2*r());
+function fft(re,im){const n=re.length;for(let i=1,j=0;i<n;i++){let b=n>>1;for(;j&b;b>>=1)j^=b;j^=b;if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]]}}
+ for(let l=2;l<=n;l<<=1){const a=-PI2/l,wr=Math.cos(a),wi=Math.sin(a);for(let i=0;i<n;i+=l){let cr=1,ci=0;for(let k=0;k<l/2;k++){const x=i+k,y=x+l/2,tr=re[y]*cr-im[y]*ci,ti=re[y]*ci+im[y]*cr;re[y]=re[x]-tr;im[y]=im[x]-ti;re[x]+=tr;im[x]+=ti;const nr=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=nr}}}}
+function ifft(re,im){const n=re.length;for(let i=0;i<n;i++)im[i]=-im[i];fft(re,im);for(let i=0;i<n;i++){re[i]/=n;im[i]=-im[i]/n}}
+const win=(nm,n)=>{const c=nm=='Hann'?[.5,.5,0]:nm=='Hamming'?[.54,.46,0]:nm=='Blackman'?[.42,.5,.08]:[1,0,0];return Float64Array.from({length:n},(_,i)=>c[0]-c[1]*Math.cos(PI2*i/n)+c[2]*Math.cos(2*PI2*i/n))};
+const db10=p=>10*Math.log10(Math.max(p,1e-20));
+const median=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+function gen1(c,t,fs,dur){const n=t.length,o=new Float64Array(n),f=c.frequency,A=c.amplitude,ph=c.phase,fm=c.message_frequency,mi=c.modulation_index;
+ const sq=x=>(((x%PI2)+PI2)%PI2)<Math.PI?1:-1,tri=x=>{const u=(((x%PI2)+PI2)%PI2)/PI2;return u<.5?4*u-1:3-4*u};
+ const sps=Math.max(1,Math.round(fs/c.symbol_rate)),ns=Math.ceil(n/sps)+1,r=rng(1000+c.id),QP=[Math.PI/4,3*Math.PI/4,7*Math.PI/4,5*Math.PI/4];
+ const bits=c.type=='BPSK'?Array.from({length:ns},()=>r()<.5?0:1):c.type=='QPSK'?Array.from({length:ns*2},()=>r()<.5?0:1):[];
+ for(let i=0;i<n;i++){const T=t[i],w=PI2*f*T+ph,s=i/sps|0;let y;
+  switch(c.type){case'Sine':y=Math.sin(w);break;case'Cosine':y=Math.cos(w);break;case'Square':y=sq(w);break;case'Triangle':y=tri(w);break;
+  case'Chirp':y=Math.cos(PI2*(f*T+(c.chirp_end_frequency-f)*T*T/(2*dur))+ph);break;
+  case'AM':y=(1+mi*Math.cos(PI2*fm*T))*Math.cos(w);break;case'FM':y=Math.cos(w+mi*Math.sin(PI2*fm*T));break;
+  case'PM':y=Math.cos(w+mi*Math.cos(PI2*fm*T));break;case'BPSK':y=(bits[s]?1:-1)*Math.cos(w);break;
+  case'QPSK':{const p=QP[bits[2*s]*2+bits[2*s+1]];y=Math.cos(p)*Math.cos(w)-Math.sin(p)*Math.sin(w)}break;default:throw Error('Unknown signal type '+c.type)}
+  o[i]=A*y}return o}
+function addNoise(x,t,k,seed){const r=rng(seed),n=x.length,P=a=>a.reduce((s,q)=>s+q*q,0)/n,cp=P(x),y=Float64Array.from(x),nz=new Float64Array(n);
+ if(k.en){const s=Math.sqrt((cp||1e-12)/10**(k.snr/10));for(let i=0;i<n;i++){const g=gauss(r)*s;y[i]+=g;nz[i]+=g}}
+ if(k.nbEn){const p0=rng(42)()*PI2;for(let i=0;i<n;i++){const q=k.nbA*Math.sin(PI2*k.nbF*t[i]+p0);y[i]+=q;nz[i]+=q}}
+ if(k.imEn)for(let i=0;i<n;i++)if(r()<k.imP){const q=(r()<.5?-1:1)*k.imA;y[i]+=q;nz[i]+=q}
+ const np=P(nz);return{y,snr:np>0&&cp>0?10*Math.log10(cp/np):Infinity}}
+/* one-sided windowed FFT; returns linear magnitude + power */
+function fftSpec(x,fs,nfft,wn){const m=Math.min(x.length,nfft),w=win(wn,m),g=w.reduce((a,b)=>a+b,0)/m,re=new Float64Array(nfft),im=new Float64Array(nfft);
+ let mean=0;for(let i=0;i<m;i++)mean+=x[i];mean/=m;for(let i=0;i<m;i++)re[i]=(x[i]-mean)*w[i];fft(re,im);
+ const h=nfft/2+1,mag=new Float64Array(h),pw=new Float64Array(h),f=new Float64Array(h);
+ for(let k=0;k<h;k++){let a=Math.hypot(re[k],im[k])/(nfft*g);if(k>0&&k<h-1)a*=2;mag[k]=a;pw[k]=a*a;f[k]=k*fs/nfft}return{f,mag,pw}}
+function welch(x,fs,nfft,wn){const L=Math.min(nfft,x.length),w=win(wn,L),hop=L>>1,h=nfft/2+1,acc=new Float64Array(h);let cnt=0,sw=0;for(const q of w)sw+=q*q;
+ for(let s=0;s+L<=x.length;s+=hop){const re=new Float64Array(nfft),im=new Float64Array(nfft);let m=0;for(let i=0;i<L;i++)m+=x[s+i];m/=L;
+  for(let i=0;i<L;i++)re[i]=(x[s+i]-m)*w[i];fft(re,im);for(let k=0;k<h;k++){let p=(re[k]*re[k]+im[k]*im[k])/(fs*sw);if(k>0&&k<h-1)p*=2;acc[k]+=p}cnt++}
+ const f=Float64Array.from(acc,(_,k)=>k*fs/nfft),db=Float64Array.from(acc,p=>db10(p/cnt));return{f,db}}
+function findPeaks(y,h,dist,pmin){const n=y.length,c=[];for(let i=1;i<n-1;i++)if(y[i]>y[i-1]&&y[i]>=y[i+1]&&y[i]>=h)c.push(i);
+ c.sort((a,b)=>y[b]-y[a]);const keep=[];for(const i of c)if(keep.every(k=>Math.abs(k-i)>=dist))keep.push(i);
+ const out=[];for(const i of keep){let l=i,lm=y[i],r=i,rm=y[i];while(l>0&&y[l-1]<=y[i]){l--;lm=Math.min(lm,y[l])}while(r<n-1&&y[r+1]<=y[i]){r++;rm=Math.min(rm,y[r])}
+  const pr=y[i]-Math.max(lm,rm);if(pr<pmin)continue;const ref=y[i]-pr/2;let a=i,b=i;while(a>l&&y[a]>ref)a--;while(b<r&&y[b]>ref)b++;
+  const li=a<i&&y[a]<ref?a+(ref-y[a])/(y[a+1]-y[a]):a,ri=b>i&&y[b]<ref?b-(ref-y[b])/(y[b-1]-y[b]):b;out.push({i,p:y[i],prom:pr,wb:ri-li})}
+ return out.sort((a,b)=>b.p-a.p)}
+function edge(y,i,lv,d){let j=i;const n=y.length;while(j+d>=0&&j+d<n&&y[j+d]>=lv)j+=d;return j+d>=0&&j+d<n?j+d:j}
+function cluster(f,y,pk,thr){if(!pk.length)return[];const bm=$('#bwm').value,gap=v('gap'),bw=p=>{const lv=bm=='threshold'?thr:p.p-3;return[f[edge(y,p.i,lv,-1)],f[edge(y,p.i,lv,1)]]};
+ const o=[...pk].sort((a,b)=>a.i-b.i),out=[];let m=[o[0]],[lo,hi]=bw(o[0]);
+ for(const p of o.slice(1)){const[l,h]=bw(p);if(l<=hi+gap){m.push(p);hi=Math.max(hi,h);lo=Math.min(lo,l)}else{out.push({m,lo,hi});m=[p];lo=l;hi=h}}
+ out.push({m,lo,hi});out.forEach(c=>c.a=c.m.reduce((a,b)=>b.p>a.p?b:a));return out.sort((a,b)=>b.a.p-a.p)}
+/* FFT-domain band isolation -> real band signal + analytic envelope */
+function isolate(x,fs,lo,hi){const n=x.length,re=Float64Array.from(x),im=new Float64Array(n);fft(re,im);
+ for(let k=0;k<n;k++){const f=k*fs/n;if(k>0&&k<n/2&&f>=lo&&f<=hi){re[k]*=2;im[k]*=2}else{re[k]=0;im[k]=0}}
+ ifft(re,im);return{x:re,env:Float64Array.from(re,(a,i)=>Math.hypot(a,im[i]))}}
+function features(x,env,lf,lp,npk){const n=x.length,mean=a=>a.reduce((s,q)=>s+q,0)/a.length,vr=a=>{const m=mean(a);return mean(a.map(q=>(q-m)**2))};
+ const tp=lp.reduce((a,b)=>a+b,0),cen=tp>0?lp.reduce((s,p,i)=>s+lf[i]*p,0)/tp:0,sb=tp>0?Math.sqrt(lp.reduce((s,p,i)=>s+(lf[i]-cen)**2*p,0)/tp):0;
+ const lg=mean(lp.map(p=>Math.log(Math.max(p,1e-20)))),flat=mean(lp)>0?Math.exp(lg)/mean(lp):0;
+ const v2=vr(x),kurt=v2>1e-24?mean(x.map(q=>(q-mean(x))**4))/(v2*v2)-3:0;let zc=0;for(let i=1;i<n;i++)if((x[i]>=0)!=(x[i-1]>=0))zc++;
+ const pk=Math.max(...x.map(Math.abs)),ap=mean(x.map(q=>q*q));
+ return{sb,flat,npk,kurt,zcr:zc/(n-1),papr:ap>0?10*Math.log10(pk*pk/Math.max(ap,1e-20)):0,env:vr(env)}}
+function classify(f,snr){const R=(l,c)=>({label:l,conf:c});
+ if(snr<3&&f.npk==0)return R('Noise',.6);if(f.flat>.5&&f.npk==0)return R('Noise',.65);
+ if(f.env>.05&&f.papr<10)return R('AM',.7);if(f.env<.02&&f.sb>3000&&f.papr<6)return R('FM',.65);
+ if(f.sb>5000&&f.zcr>.15)return f.kurt<0?R('QPSK',.6):R('BPSK',.6);
+ if(f.sb<2000&&f.npk<=1)return R('CW/Sine',.75);if(f.npk>=2)return R('Interference',.5);return R('Unknown',.3)}
+/* ---------- state & engine ---------- */
+let S=[],nid=1,seed=0,R=null,wf=[],view=null,timer=null,state='stopped',lastT=0;
+const mk=o=>({id:nid++,type:'Sine',frequency:1e5,amplitude:1,phase:0,enabled:true,modulation_index:.5,message_frequency:5000,symbol_rate:1e4,chirp_end_frequency:5e5,...o});
+const noiseCfg=()=>({en:ck('nEn'),snr:v('snr'),nbEn:ck('nbEn'),nbF:v('nbF'),nbA:v('nbA'),imEn:ck('imEn'),imP:v('imP'),imA:v('imA')});
+function run(){const fs=v('fs'),nf=+$('#fft').value,wn=$('#win').value;if(!(fs>0))throw Error('Sampling frequency must be positive');
+ const N=Math.max(nf*2,4096),dur=N/fs,t=Float64Array.from({length:N},(_,i)=>i/fs),x=new Float64Array(N);
+ for(const c of S)if(c.enabled){const y=gen1(c,t,fs,dur);for(let i=0;i<N;i++)x[i]+=y[i]}
+ seed++;const nz=addNoise(x,t,noiseCfg(),7+seed),sig=nz.y,sp=fftSpec(sig,fs,nf,wn),ps=welch(sig,fs,nf,wn),f=ps.f;
+ const floor=median(ps.db),thr=floor+v('thr'),cl=cluster(f,ps.db,findPeaks(ps.db,thr,3,v('prom')),thr).slice(0,10),df=f[1]-f[0],det=[];
+ for(const c of cl){const a=c.a,span=Math.max(c.hi-c.lo,5000),ctr=(c.lo+c.hi)/2,half=Math.max(span,2000)/2,rg=Math.max(span,2000);
+  const iso=isolate(sig,fs,Math.max(ctr-half,1),Math.min(ctr+half,fs/2*.999)),lf=[],lp=[];
+  for(let k=0;k<f.length;k++)if(f[k]>=ctr-rg&&f[k]<=ctr+rg){lf.push(f[k]);lp.push(sp.pw[k])}
+  const cls=classify(features(iso.x,iso.env,lf.length?lf:[...f],lp.length?lp:[...sp.pw],c.m.length),nz.snr);
+  det.push({i:a.i,f:f[a.i],p:a.p,prom:a.prom,w:a.wb*df,status:a.p>thr+10?'Strong':'Detected',lo:c.lo,hi:c.hi,bw:Math.abs(c.hi-c.lo),cls:cls.label,conf:cls.conf})}
+ return{t,sig,f,fs,nf,wn,psd:ps.db,pw:Float64Array.from(sp.pw,db10),mag:Float64Array.from(sp.mag,m=>db10(m*m)),floor,thr,det,snr:nz.snr,nyq:fs/2,res:fs/nf}}
+/* ---------- plotting ---------- */
+function ticks(a,b,n=6){const s=(b-a)/n,p=10**Math.floor(Math.log10(s)),m=s/p,st=(m<1.5?1:m<3.5?2:m<7.5?5:10)*p,r=[];for(let q=Math.ceil(a/st)*st;q<=b+1e-9;q+=st)r.push(q);return r}
+const fHz=q=>Math.abs(q)>=1e6?(q/1e6).toFixed(2)+'M':Math.abs(q)>=1e3?(q/1e3).toFixed(0)+'k':q.toFixed(0);
+function plot(cv,o){const d=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;if(cv.width!=W*d||cv.height!=H*d){cv.width=W*d;cv.height=H*d}
+ const g=cv.getContext('2d');g.setTransform(d,0,0,d,0,0);g.fillStyle='#1a1f27';g.fillRect(0,0,W,H);if(!o)return;
+ const L=48,Rr=10,Tp=8,B=24,pw=W-L-Rr,ph=H-Tp-B,X=q=>L+(q-o.x0)/(o.x1-o.x0)*pw,Y=q=>Tp+(1-(q-o.y0)/(o.y1-o.y0))*ph;g.font='10px sans-serif';g.lineWidth=1;
+ g.strokeStyle='#293040';g.fillStyle='#8b96a3';g.textAlign='center';for(const q of ticks(o.x0,o.x1)){g.beginPath();g.moveTo(X(q),Tp);g.lineTo(X(q),Tp+ph);g.stroke();g.fillText((o.xf||fHz)(q),X(q),H-8)}
+ g.textAlign='right';for(const q of ticks(o.y0,o.y1,5)){g.beginPath();g.moveTo(L,Y(q));g.lineTo(L+pw,Y(q));g.stroke();g.fillText((o.yf||(a=>a.toFixed(0)))(q),L-4,Y(q)+3)}
+ g.save();g.beginPath();g.rect(L,Tp,pw,ph);g.clip();
+ for(const h of o.hl||[]){g.strokeStyle=h.c;g.setLineDash([5,4]);g.beginPath();g.moveTo(L,Y(h.y));g.lineTo(L+pw,Y(h.y));g.stroke()}g.setLineDash([]);
+ for(const q of o.vl||[]){g.strokeStyle=q.c;g.lineWidth=1.5;g.beginPath();g.moveTo(X(q.x),Tp);g.lineTo(X(q.x),Tp+ph);g.stroke()}
+ for(const s of o.series){g.strokeStyle=s.c;g.lineWidth=1.4;g.beginPath();const st=Math.max(1,Math.floor(s.x.length/(pw*2)));
+  for(let i=0;i<s.x.length;i+=st){const px=X(s.x[i]),py=Y(s.y[i]);i?g.lineTo(px,py):g.moveTo(px,py)}g.stroke()}
+ g.textAlign='center';for(const p of o.pts||[]){g.fillStyle='#ffb454';g.beginPath();g.arc(X(p.x),Y(p.y),4,0,PI2);g.fill();g.fillStyle='#d7dee6';g.fillText(p.t1,X(p.x),Y(p.y)-18);g.fillText(p.t2,X(p.x),Y(p.y)-8)}
+ g.restore();g.textAlign='left';(o.legend||[]).forEach(([n,c],i)=>{g.fillStyle=c;g.fillText('■ '+n,L+8+i*95,Tp+12)});
+ return{L,pw,x0:o.x0,x1:o.x1}}
+let geo=null;
+function drawSpec(){const cv=$('#cSpec');if(!R)return plot(cv,null);const m=$('#mode').value,y=m=='PSD'?R.psd:m.startsWith('Mag')?R.mag:R.pw,vx=view||[0,R.nyq];
+ let lo=Infinity,hi=-Infinity;for(const q of y){if(q<lo)lo=q;if(q>hi)hi=q}const isP=m=='PSD';
+ geo=plot(cv,{x0:vx[0],x1:vx[1],y0:Math.min(lo,R.floor-5),y1:hi+18,series:[{x:R.f,y,c:'#33c9a7'}],hl:isP?[{y:R.floor,c:'#5a6578'},{y:R.thr,c:'#ff5d5d'}]:[],
+  pts:R.det.map(d=>({x:d.f,y:y[d.i],t1:MHz(+v('cf')+d.f),t2:y[d.i].toFixed(1)+' dB'}))})}
+function drawTime(){const cv=$('#cTime');if(!R)return plot(cv,null);const n=Math.max(2,Math.floor(R.t.length*Math.min(1,Math.max(.01,v('tw'))))),t=R.t.subarray(0,n),s=R.sig.subarray(0,n);
+ let mx=1e-9;for(const q of s)mx=Math.max(mx,Math.abs(q));plot(cv,{x0:t[0],x1:t[n-1],y0:-mx*1.1,y1:mx*1.1,series:[{x:t,y:s,c:'#4da3ff'}],xf:q=>(q*1e3).toFixed(2)+'ms',yf:q=>q.toFixed(1)})}
+const CMAP=[[48,18,59],[70,98,215],[26,199,194],[164,252,60],[254,155,45],[122,4,3]];
+function cmap(u){u=Math.min(.999,Math.max(0,u))*(CMAP.length-1);const i=u|0,f=u-i,a=CMAP[i],b=CMAP[i+1];return a.map((q,k)=>q+(b[k]-q)*f)}
+function drawWf(){const cv=$('#cWf');plot(cv,null);if(!wf.length)return;const nb=wf[0].length,nf=wf.length,oc=document.createElement('canvas');oc.width=nb;oc.height=nf;
+ const all=wf.flatMap(a=>[...a]).sort((a,b)=>a-b),lo=all[Math.floor(all.length*.05)],hi=Math.max(all[Math.floor(all.length*.99)],lo+1),im=oc.getContext('2d').createImageData(nb,nf);
+ wf.forEach((fr,r)=>{const row=nf-1-r;for(let k=0;k<nb;k++){const c=cmap((fr[k]-lo)/(hi-lo)),p=(row*nb+k)*4;im.data.set([c[0],c[1],c[2],255],p)}});
+ oc.getContext('2d').putImageData(im,0,0);const g=cv.getContext('2d'),W=cv.clientWidth,H=cv.clientHeight;g.imageSmoothingEnabled=false;g.drawImage(oc,0,0,W,H);
+ g.fillStyle='#fff';g.font='10px sans-serif';g.fillText('0 Hz',4,H-4);g.textAlign='right';g.fillText(fHz(R.nyq)+'Hz  (newest at top)',W-4,H-4);g.textAlign='left'}
+const redraw=()=>{drawSpec();drawWf();drawTime()};
+/* spectrum zoom / pan */
+{const cv=$('#cSpec');let drag=null;const xAt=e=>{const r=cv.getBoundingClientRect(),px=e.clientX-r.left;return geo?geo.x0+(px-geo.L)/geo.pw*(geo.x1-geo.x0):0};
+ cv.addEventListener('wheel',e=>{if(!R)return;e.preventDefault();const [a,b]=view||[0,R.nyq],c=xAt(e),k=e.deltaY<0?.8:1.25;view=[Math.max(0,c-(c-a)*k),Math.min(R.nyq,c+(b-c)*k)];drawSpec()},{passive:false});
+ cv.addEventListener('mousedown',e=>drag={x:xAt(e),v:[...(view||[0,R?R.nyq:1])]});addEventListener('mouseup',()=>drag=null);
+ cv.addEventListener('mousemove',e=>{if(!drag||!R||!geo)return;const r=cv.getBoundingClientRect(),w=drag.v[1]-drag.v[0],c0=drag.v[0]+((drag.px??(drag.px=e.clientX-r.left))-geo.L)/geo.pw*w;
+  const dx=(e.clientX-r.left-drag.px)/geo.pw*w;let a=drag.v[0]-dx;a=Math.max(0,Math.min(R.nyq-w,a));view=[a,a+w];drawSpec()});
+ cv.addEventListener('dblclick',()=>{view=null;drawSpec()})}
+/* ---------- UI ---------- */
+const DASH=[['cf','Center Frequency'],['sp','Frequency Span'],['fs','Sampling Frequency'],['ny','Nyquist Frequency'],['nf','FFT Size'],['rs','Frequency Resolution'],['wn','Window Function'],['fl','Noise Floor'],['n','Detected Signals'],['sf','Strongest Signal'],['sp2','Strongest Signal Power'],['snr','Estimated SNR'],['rt','Processing Rate']];
+$('#dash').innerHTML=DASH.map(([k,l])=>`<tr><td>${l}</td><td class="v" id="d_${k}">—</td></tr>`).join('');
+$('#det').innerHTML='<thead><tr><th>Frequency<th>Power<th>Width<th>BW (Hz)<th>Status<th>Class<th>Conf.</tr></thead><tbody></tbody>';
+function updateUI(rate){const set=(k,t)=>$('#d_'+k).textContent=t,s=R.det[0];
+ set('cf',MHz(v('cf')));set('sp',MHz(v('span')));set('fs',MHz(R.fs));set('ny',MHz(R.nyq));set('nf',R.nf);set('rs',R.res.toFixed(2)+' Hz');set('wn',R.wn);set('fl',R.floor.toFixed(2)+' dB');set('n',R.det.length);
+ set('sf',s?MHz(v('cf')+s.f):'—');set('sp2',s?s.p.toFixed(2)+' dB':'—');set('snr',isFinite(R.snr)?R.snr.toFixed(2)+' dB':'∞ (no noise)');set('rt',rate.toFixed(1)+' Hz');
+ $('#det tbody').innerHTML=R.det.map(d=>`<tr><td>${(( v('cf')+d.f)/1e6).toFixed(5)} MHz<td>${d.p.toFixed(1)}<td>${d.w.toFixed(1)}<td>${d.bw.toFixed(1)}<td>${d.status}<td>${d.cls}<td>${(d.conf*100).toFixed(0)}%</tr>`).join('')}
+function tick(){try{R=run();if(wf.length&&wf[0].length!=R.psd.length)wf=[];wf.push(R.psd);if(wf.length>150)wf.shift();const n=performance.now();updateUI(lastT?1000/(n-lastT):0);lastT=n;redraw()}catch(e){status('Error: '+e.message)}}
+function setState(s){state=s;clearInterval(timer);if(s=='running'){tick();timer=setInterval(tick,120)}
+ $('#bGo').disabled=s=='running';$('#bGo').textContent=s=='paused'?'▶ RESUME':'▶ START';$('#bPa').disabled=s!='running';$('#bSt').disabled=s=='stopped';
+ status({running:'Running — real-time analysis active.',paused:'Paused.',stopped:'Stopped.'}[s])}
+$('#bGo').onclick=()=>setState('running');$('#bPa').onclick=()=>setState('paused');$('#bSt').onclick=()=>setState('stopped');
+$('#bRe').onclick=()=>{setState('stopped');seed=0;wf=[];R=null;view=null;lastT=0;redraw();status('Reset. Configuration retained; buffers cleared.')};
+/* signal table + dialog */
+function renderSigs(){$('#sigs').innerHTML='<tr><th>ID<th>Type<th>Freq<th>Amp<th>On<th></tr>'+S.map((c,i)=>`<tr><td>${c.id}<td>${c.type}<td>${(c.frequency/1000).toFixed(2)} kHz<td>${c.amplitude.toFixed(2)}<td>${c.enabled?'✓':'✗'}<td><button onclick="tog(${i})">Toggle</button><button onclick="edit(${i})">Edit</button><button onclick="del(${i})">Del</button></tr>`).join('')}
+const tog=i=>{S[i].enabled=!S[i].enabled;renderSigs()},del=i=>{if(S.length<=1)return alert('At least one signal must remain configured.');S.splice(i,1);renderSigs()};
+$('#eT').innerHTML=TYPES.map(t=>`<option>${t}`).join('');
+const eMap={eT:'type',eF:'frequency',eA:'amplitude',eM:'modulation_index',eMf:'message_frequency',eS:'symbol_rate',eC:'chirp_end_frequency'};
+const eVis=()=>{const t=$('#eT').value;$('#eM').disabled=$('#eMf').disabled=!['AM','FM','PM'].includes(t);$('#eS').disabled=!['BPSK','QPSK'].includes(t);$('#eC').disabled=t!='Chirp'};$('#eT').onchange=eVis;
+function edit(i){const c=i<0?mk({frequency:1e5+5e4*S.length}):S[i];if(i<0)nid--;for(const k in eMap)$('#'+k).value=c[eMap[k]];$('#eP').value=+(c.phase*180/Math.PI).toFixed(3);$('#eE').checked=c.enabled;$('#eH').textContent='Configure Signal '+c.id;eVis();
+ $('#dlg').returnValue='';$('#dlg').onclose=()=>{if($('#dlg').returnValue!='ok')return;const n={...c,phase:v('eP')*Math.PI/180,enabled:ck('eE')};for(const k in eMap)n[eMap[k]]=k=='eT'?$('#eT').value:v(k);
+  if(i<0){n.id=nid++;S.push(n)}else S[i]=n;renderSigs()};$('#dlg').showModal()}
+$('#bAdd').onclick=()=>edit(-1);
+$('#bRnd').onclick=()=>{S.forEach(c=>{c.frequency=Math.round(20000+Math.random()*880000)+0;c.amplitude=+(.2+Math.random()*1.3).toFixed(2)});renderSigs()};
+/* scenarios */
+const N0=o=>({en:true,snr:20,nbEn:false,nbF:3e5,nbA:.3,imEn:false,imP:.001,imA:5,...o});
+const SC={'Clean Signal':[[{frequency:2e5}],{snr:35}],'Multiple Signals':[[{frequency:1e5},{frequency:2.5e5,amplitude:.7},{frequency:4.5e5,amplitude:.5}],{snr:22}],
+ 'Noisy Environment':[[{frequency:1.5e5},{frequency:3.8e5,amplitude:.8}],{snr:5}],'Interference':[[{frequency:2e5}],{snr:18,nbEn:true,nbF:2.6e5,nbA:.6}],
+ 'AM Signal':[[{type:'AM',frequency:3e5,modulation_index:.7,message_frequency:8000}],{snr:25}],'FM Signal':[[{type:'FM',frequency:3e5,modulation_index:4,message_frequency:6000}],{snr:25}],
+ 'Digital Signal':[[{type:'BPSK',frequency:3e5,symbol_rate:4e4}],{snr:20}],'Frequency Sweep':[[{type:'Chirp',frequency:2e4,chirp_end_frequency:9e5}],{snr:25}]};
+$('#scn').innerHTML=Object.keys(SC).map(k=>`<option>${k}`).join('');
+function setNoise(n){n=N0(n);$('#nEn').checked=n.en;$('#snr').value=n.snr;$('#nbEn').checked=n.nbEn;$('#nbF').value=n.nbF;$('#nbA').value=n.nbA;$('#imEn').checked=n.imEn;$('#imP').value=n.imP;$('#imA').value=n.imA}
+$('#bScn').onclick=()=>{const [sg,nz]=SC[$('#scn').value];nid=1;S=sg.map(mk);setNoise(nz);$('#fs').value=2e6;$('#fft').value=4096;$('#win').value='Hann';renderSigs();status('Scenario loaded: '+$('#scn').value)};
+/* download / export */
+const dl=(n,s,t='text/csv')=>{const a=document.createElement('a');a.href=typeof s=='string'?URL.createObjectURL(new Blob([s],{type:t})):URL.createObjectURL(s);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
+const need=()=>R||(alert('Run the analyzer at least once first.'),false);
+$('#bCsv').onclick=()=>{if(!need())return;dl('spectrum.csv','Frequency_Hz,Power_dB\n'+Array.from(R.f,(f,i)=>f.toFixed(3)+','+R.psd[i].toFixed(4)).join('\n'));
+ setTimeout(()=>dl('spectrum_peaks.csv','Frequency_Hz,Power_dB,Prominence_dB,Width_Hz,Status\n'+R.det.map(d=>[d.f.toFixed(3),d.p.toFixed(4),d.prom.toFixed(4),d.w.toFixed(3),d.status]).join('\n')),300);
+ setTimeout(()=>dl('spectrum_bandwidth.csv','Center_Hz,Lower_Hz,Upper_Hz,Bandwidth_Hz,Method\n'+R.det.map(d=>[d.f.toFixed(3),d.lo.toFixed(3),d.hi.toFixed(3),d.bw.toFixed(3),$('#bwm').value=='3db'?'-3 dB':'Noise-Threshold']).join('\n')),600)};
+$('#bJson').onclick=()=>{if(!need())return;dl('analysis.json',JSON.stringify({configuration:{sample_rate:R.fs,fft_size:R.nf,window:R.wn,center_frequency:v('cf'),span:v('span'),signals:S,noise:noiseCfg()},
+ results:{noise_floor_db:R.floor,detection_threshold_db:R.thr,measured_snr_db:isFinite(R.snr)?R.snr:null,detected_signals:R.det.map(d=>({frequency:v('cf')+d.f,power_db:d.p,bandwidth_hz:d.bw,classification:d.cls,confidence:d.conf}))}},null,2),'application/json')};
+$('#bPng').onclick=()=>{if(!R)return alert('Run the analyzer at least once first.');$('#cSpec').toBlob(b=>dl('spectrum.png',b));setTimeout(()=>$('#cWf').toBlob(b=>dl('spectrum_waterfall.png',b)),300)};
+/* history (localStorage) */
+const H={get(){try{return JSON.parse(localStorage.getItem('spectrumx_history')||'[]')}catch(e){return[]}},set(a){try{localStorage.setItem('spectrumx_history',JSON.stringify(a))}catch(e){status('Storage unavailable: '+e.message)}}};
+$('#bSave').onclick=()=>{if(!need())return;const a=H.get();a.unshift({id:Math.max(0,...a.map(r=>r.id))+1,ts:new Date().toISOString().slice(0,19),signals:S,fs:R.fs,nf:R.nf,wn:R.wn,noise:noiseCfg(),floor:R.floor,
+ det:R.det.map(d=>({frequency:v('cf')+d.f,power_db:d.p,bandwidth:d.bw,classification:d.cls,confidence:d.conf})),bw:R.det[0]?R.det[0].bw:0,
+ cls:R.det.map(d=>`${d.cls} (${MHz(v('cf')+d.f)})`).join(', ')||'None',notes:''});H.set(a);renderHist();status('Analysis saved to history.')};
+function renderHist(){const q=$('#hq').value.trim().toLowerCase(),a=H.get().filter(r=>!q||(JSON.stringify(r.signals)+r.cls+r.notes).toLowerCase().includes(q));
+ $('#hist').innerHTML='<tr><th>ID<th>Timestamp<th>Sample Rate<th>FFT<th>Window<th>Floor (dB)<th>Classification<th></tr>'+a.map(r=>`<tr><td>${r.id}<td>${r.ts}<td>${(r.fs/1e6).toFixed(3)} MHz<td>${r.nf}<td>${r.wn}<td>${r.floor.toFixed(1)}<td>${r.cls}<td><button onclick="hv(${r.id})">View</button><button onclick="hr(${r.id})">Reload</button><button onclick="hd(${r.id})">Delete</button></tr>`).join('')}
+const hv=id=>{const r=H.get().find(x=>x.id==id);$('#vp').textContent=`Record #${r.id} — ${r.ts}\n\nSignals:\n${JSON.stringify(r.signals,null,2)}\n\nDetected:\n${JSON.stringify(r.det,null,2)}\n\nBandwidth: ${r.bw.toFixed(1)} Hz\nClassification: ${r.cls}\nNotes: ${r.notes}`;$('#vd').showModal()};
+const hr=id=>{const r=H.get().find(x=>x.id==id);S=r.signals.map(c=>({...c}));nid=Math.max(...S.map(c=>c.id))+1;setNoise(r.noise);$('#fs').value=r.fs;$('#fft').value=r.nf;$('#win').value=r.wn;renderSigs();tab(0);status(`Reloaded analysis record #${id} from history.`)};
+const hd=id=>{if(confirm(`Delete analysis record #${id}? This cannot be undone.`)){H.set(H.get().filter(r=>r.id!=id));renderHist()}};
+$('#hS').onclick=renderHist;$('#hq').onkeydown=e=>e.key=='Enter'&&renderHist();$('#hC').onclick=()=>{$('#hq').value='';renderHist()};
+/* tools */
+$('#aGo').onclick=()=>{const f=v('aF'),fs=v('aS');if(!(fs>0&&f>0))return alert('Frequencies must be positive.');const nyq=fs/2,al=f>nyq;let fa=null;if(al){fa=f%fs;if(fa>nyq)fa=fs-fa}
+ const n=Math.max(2,Math.round(fs*.004)),t=Float64Array.from({length:n},(_,i)=>i/fs),x=gen1(mk({frequency:f}),t,fs,.004);nid--;const sp=fftSpec(x,fs,4096,'Hann'),db=Float64Array.from(sp.pw,db10);
+ let pk=0;db.forEach((q,i)=>{if(q>db[pk])pk=i});const o=$('#aOut');
+ o.textContent=al?`⚠ ALIASING DETECTED — ${MHz(f)} exceeds Nyquist (${MHz(nyq)}). Predicted alias: ${MHz(fa)}. Observed peak in sampled spectrum: ${MHz(sp.f[pk])}.`:`No aliasing. ${MHz(f)} is below Nyquist (${MHz(nyq)}). Observed peak: ${MHz(sp.f[pk])}.`;o.style.color=al?'#ffb454':'#33c9a7';
+ plot($('#cAl'),{x0:0,x1:nyq,y0:Math.max(Math.min(...db),db[pk]-130),y1:db[pk]+10,series:[{x:sp.f,y:db,c:'#33c9a7'}],vl:al?[{x:fa,c:'#ff5d5d'}]:[]})};
+$('#lGo').onclick=()=>{const f=v('lF'),fs=2e6,n=8000,t=Float64Array.from({length:n},(_,i)=>i/fs),x=gen1(mk({frequency:f}),t,fs,.004);nid--;const col=['#ff5d5d','#ffb454','#4da3ff','#33c9a7'],se=[];let hi=-1e9,lo=1e9;
+ WINS.forEach((w,i)=>{const sp=fftSpec(x,fs,4096,w),db=Float64Array.from(sp.pw,db10);se.push({x:sp.f,y:db,c:col[i]});hi=Math.max(hi,...db);lo=Math.min(lo,...db)});
+ plot($('#cLk'),{x0:Math.max(0,f-1e5),x1:f+1e5,y0:Math.max(lo,hi-140),y1:hi+10,series:se,legend:WINS.map((w,i)=>[w,col[i]])})};
+/* tabs & init */
+function tab(i){document.querySelectorAll('.tab').forEach((b,k)=>b.classList.toggle('on',k==i));document.querySelectorAll('.page').forEach((p,k)=>p.classList.toggle('on',k==i));if(i==0)redraw();if(i==1)renderHist()}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>tab(+b.dataset.t));addEventListener('resize',redraw);
+S=[mk({})];renderSigs();redraw();
+</script></body></html>
